@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Validação de certificado · EQI</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✅</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#DCE3E0; --paper:#F7F9F8; --ink:#16231E; --muted:#56655F;
+  --green:#164B38; --ok:#1E6B4A; --bad:#9A2E22; --line:#C3CEC9;
+  color-scheme:light; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#101814; --paper:#17221D; --ink:#E4ECE8; --muted:#9AAAA3;
+  --green:#8FC9AE; --ok:#7FD0A8; --bad:#F09A8C; --line:#2A3A33; color-scheme:dark;}}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:400 16px/1.55 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:clamp(24px,6vw,72px) 16px}
+main{width:100%;max-width:560px}
+.brand{font:600 34px/1 "Newsreader",Georgia,serif;color:var(--green);letter-spacing:.5px;margin:0 0 28px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:clamp(22px,5vw,36px)}
+.status{display:flex;gap:14px;align-items:center;margin:0 0 6px}
+.seal{flex:none;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:600;font-size:22px}
+.ok .seal{background:var(--ok)} .bad .seal{background:var(--bad)} .wait .seal{background:var(--muted)}
+h1{font:500 28px/1.2 "Newsreader",Georgia,serif;margin:0}
+.ok h1{color:var(--ok)} .bad h1{color:var(--bad)}
+.lead{color:var(--muted);margin:6px 0 24px}
+dl{margin:0;display:grid;gap:14px}
+dt{font-size:13px;color:var(--muted)}
+dd{margin:2px 0 0;font-size:18px;font-weight:500;overflow-wrap:anywhere}
+dd.code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:16px;letter-spacing:.5px}
+.foot{font-size:13px;color:var(--muted);margin-top:22px}
+</style>
+</head>
+<body>
+<main>
+  <p class="brand">EQI</p>
+  <section class="card wait" id="card" aria-live="polite">
+    <div class="status"><span class="seal" aria-hidden="true">…</span><h1>Verificando</h1></div>
+  </section>
+  <p class="foot">A autenticidade é conferida por assinatura digital emitida pela EQI. Os dados exibidos não podem ser alterados sem invalidar o certificado.</p>
+</main>
+<script>
+// Chave pública da EQI. Não é segredo: serve apenas para conferir assinaturas.
+const PUBLIC_KEY = {"kty":"EC","crv":"P-256","x":"CQIcUqhjOhAFeQNBG1Z_Z6IRgaqqoX4sP-v4dMr5g-Q","y":"Ay2wpMSmoPjgkE2wujxSS9OzIxmQDjVLfzXKD50vUw8"};
+
+const card = document.getElementById('card');
+function b64uToBytes(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
+function fmtDate(iso){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(iso||'');return m?`${m[3]}/${m[2]}/${m[1]}`:iso;}
+
+function show(state,title,lead,fields){
+  card.className='card '+state; card.textContent='';
+  const st=el('div','status');
+  st.append(el('span','seal',state==='ok'?'✓':'!'),el('h1',null,title));
+  st.firstChild.setAttribute('aria-hidden','true');
+  card.append(st,el('p','lead',lead));
+  if(fields){const dl=el('dl');for(const [k,v,c] of fields){if(!v)continue;dl.append(el('dt',null,k),el('dd',c||null,v));}card.append(dl);}
+}
+
+(async()=>{
+  const raw=decodeURIComponent(location.hash.slice(1));
+  const [payload,sig]=raw.split('.');
+  if(!payload||!sig){show('bad','Nenhum certificado informado','Escaneie o QR code impresso no certificado para abrir esta página com os dados dele.');return;}
+  try{
+    if(!crypto?.subtle) throw new Error('nosubtle');
+    const key=await crypto.subtle.importKey('jwk',PUBLIC_KEY,{name:'ECDSA',namedCurve:'P-256'},false,['verify']);
+    const valid=await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,b64uToBytes(sig),new TextEncoder().encode(payload));
+    if(!valid) throw new Error('invalid');
+    const d=JSON.parse(new TextDecoder().decode(b64uToBytes(payload)));
+    show('ok','Certificado válido','Este certificado foi emitido pela EQI e seus dados conferem com o registro original.',[
+      ['Participante',d.n],['Curso',d.k],['Carga horária',d.h?`${d.h} horas`:''],['Data de conclusão',fmtDate(d.d)],['Código',d.c,'code']
+    ]);
+  }catch(e){
+    if(e.message==='nosubtle'){show('bad','Navegador incompatível','Abra este link em um navegador atualizado (Chrome, Safari, Edge ou Firefox).');return;}
+    show('bad','Certificado não reconhecido','Os dados deste link não correspondem a nenhum certificado assinado pela EQI. O link pode ter sido alterado ou copiado de forma incompleta.');
+  }
+})();
+</script>
+</body>
+</html>
